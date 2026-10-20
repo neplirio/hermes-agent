@@ -69,6 +69,9 @@ def extract_fail(urls: list[str], error: str) -> list[dict[str, Any]]:
 
 # --- Keyless ring hand-off (shared by exa / parallel / keenable) ---------------
 def keyless_search(display: str, name: str, query: str, limit: int, logger: logging.Logger) -> dict[str, Any]:
+    from agent.web_search_selection import current_search_selection
+    if current_search_selection() is not None:
+        return search_fail("Explicit web.search_backends requires a credentialed search route; keyless rescue is disabled")
     from plugins.web.keyless_mcp import search_with_failover
     logger.info("%s keyless search: '%s' (limit=%d)", display, query, limit)
     return search_with_failover(name, query, limit)
@@ -217,6 +220,10 @@ class BaseWebSearchProvider(WebSearchProvider):
 
     def is_available(self) -> bool:
         return bool(provider_env(self.KEY_ENV))
+
+    def is_available_for_search_chain(self) -> bool:
+        from plugins.web.keyless_mcp import provider_tier
+        return provider_tier(self.NAME) != "free" and self.is_available()
 
     def is_keyless_available(self) -> bool:
         from plugins.web.keyless_mcp import keyless_enabled, provider_tier

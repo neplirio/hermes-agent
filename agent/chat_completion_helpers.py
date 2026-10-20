@@ -1428,6 +1428,7 @@ def _build_codex_kwargs(agent, api_messages, tools_for_api, reasoning_config, re
         max_tokens=ephemeral_out if ephemeral_out is not None else agent.max_tokens,
         timeout=agent._resolved_api_call_timeout(), request_overrides=request_overrides,
         provider=getattr(agent, "provider", None), is_github_responses=is_github_responses,
+        search_selection=getattr(agent, "_web_search_selection", None),
         is_codex_backend=is_codex_backend, is_xai_responses=is_xai_responses,
         github_reasoning_extra=agent._github_models_reasoning_extra_body() if is_github_responses else None,
         replay_encrypted_reasoning=bool(getattr(agent, "_codex_reasoning_replay_enabled", True)),
@@ -1522,14 +1523,13 @@ def build_api_kwargs(agent, api_messages: list, tools_for_api: list | None = Non
 
 
 def _build_api_kwargs_for_mode(agent, api_messages: list, tools_for_api: list | None = None) -> dict:
-    # One-shot continuation override — consumed exactly once, on the FIRST
-    # request this call builds (only one api_mode branch runs per invocation).
     reasoning_config = _reasoning_config_for_wire(agent)
     if tools_for_api is None:
         tools_for_api = agent.tools
-    # The one place request_overrides are consumed: static /fast values are already pinned
-    # in agent.request_overrides; auto/cold windows layer the fast override per request.
+    # Static /fast values are pinned; auto/cold windows layer their override per request.
     request_overrides = effective_request_overrides(agent)
+    from agent.web_search_selection import prepare_search_selection
+    prepare_search_selection(agent, tools_for_api, request_overrides)
     if agent.api_mode == "anthropic_messages":
         return _build_anthropic_kwargs(agent, api_messages, tools_for_api, reasoning_config, request_overrides)
     if agent.api_mode == "bedrock_converse":

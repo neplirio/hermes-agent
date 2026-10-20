@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
+    from providers.native_search import NativeSearchRule
     from agent.account_usage import AccountUsageSnapshot
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,10 @@ class ProviderProfile:
     # Per-model metadata in the canonical model_overrides schema. Partial entries
     # patch catalog metadata; explicit user overrides still win. Exact model IDs.
     model_capabilities: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # Hosted tools require a verified endpoint, transport and model together.
+    # Empty by default: arbitrary OpenAI-compatible routes inherit no support.
+    native_search_rules: tuple[NativeSearchRule, ...] = ()
 
     # ── Hooks (override in subclass for complex providers) ───
 
