@@ -20,6 +20,46 @@ Both are configured through a single backend selection. Providers are chosen via
 
 ## Backends
 
+### Opt-in ordered search chain (prototype)
+
+```yaml
+web:
+  search_backends: [native, firecrawl, exa]
+  extract_backend: firecrawl
+```
+
+Each model request selects the first supported and available candidate. `native`
+uses hosted search in the current inference only when the LLM provider's capability
+rules verify the effective provider, endpoint, transport and model together. Unknown
+routes skip native. The initial allowlist is deliberately narrow: Codex Responses
+at `https://chatgpt.com/backend-api/codex` with `gpt-5-codex` or `gpt-5.4`, and xAI
+Responses at `https://api.x.ai/v1` with `grok-composer-2.5-fast`. Other models,
+Anthropic/Gemini and compatible proxies use the next available client provider.
+This prototype's tests use fake provider responses; they do not establish live API
+availability. Model/provider switches recompute the choice without editing config.
+
+Client candidates require their normal credentials or endpoint (Firecrawl uses a
+direct key or self-hosted URL). Missing credentials and unsupported candidates are
+skipped with INFO diagnostics. Empty/invalid lists, duplicate or unknown names and
+disabled provider plugins are configuration errors. Use `native`, not
+`openai-native`, inside the chain. Free tier pins are skipped; no anonymous ring or
+managed rescue is implicitly added. Third-party providers must also avoid hidden
+fallback internally.
+
+**Fallback happens only before the request.** Runtime errors, including rate
+limits and native failures, do not advance the chain or add a model retry. Existing
+model/SDK retry policies continue to apply. Explicit-chain client searches bypass
+the legacy shared search memo; extract caching is unchanged. Conflicting tool
+overrides and `extra_body.model` are rejected; a top-level model override is used
+for capability selection. Disabling web tools never enables hosted search.
+
+The list is pinned for the session; start a new session after editing it. With the
+new key absent, `web.search_backend`, `web.backend`, explicit `openai-native`/`xai`,
+autodetection, search caching and legacy rescue retain their behavior.
+`web.extract_backend` and extraction remain independent.
+
+### Provider choices
+
 | Provider | Env Var | Search | Extract | Free tier |
 |----------|---------|--------|---------|-----------|
 | **Firecrawl** (default) | `FIRECRAWL_API_KEY` (optional — keyless when selected) | ✔ | ✔ | 500 credits/mo · keyless cloud when selected |

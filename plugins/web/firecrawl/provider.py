@@ -94,6 +94,9 @@ def _is_explicit_firecrawl_selection() -> bool:
 def _use_keyless_ring(capability: Optional[str] = None) -> bool:
     """Route via the keyless ring only with no direct credentials, when the managed Nous
     gateway isn't the selected path for *capability*, and the keyless tier isn't disabled or pinned paid."""
+    from agent.web_search_selection import current_search_selection
+    if capability == "search" and current_search_selection() is not None:
+        return False
     if _env("FIRECRAWL_API_KEY") or _env("FIRECRAWL_API_URL"):
         return False
     from tools.tool_backend_helpers import NOUS_MANAGED_PROVIDER, read_web_capability_selection
@@ -181,6 +184,12 @@ def _get_firecrawl_client(capability: Optional[str] = None) -> Any:
     from tools.tool_backend_helpers import NOUS_MANAGED_PROVIDER, read_web_capability_selection, selection_error
     selected = read_web_capability_selection(capability)
     direct_config = _get_direct_firecrawl_config()
+    from agent.web_search_selection import current_search_selection
+    if capability == "search" and current_search_selection() is not None:
+        if direct_config is None or direct_config[0] == "keyless":
+            raise ValueError("web.search_backends: direct Firecrawl credentials/endpoint unavailable")
+        # Keep explicit-chain construction local, independent of the legacy cache.
+        return Firecrawl(**direct_config[1])
 
     def _managed():
         gw = _gateway.resolve_managed_tool_gateway("firecrawl", token_reader=_gateway.read_nous_access_token)
@@ -214,11 +223,13 @@ def _get_firecrawl_client(capability: Optional[str] = None) -> Any:
         raise ValueError(message())
     client_mode, kwargs, client_config = resolved
     cached = getattr(wt, "_firecrawl_client", None)
-    if cached is not None and getattr(wt, "_firecrawl_client_config", None) == client_config:
-        return cached
-    wt._firecrawl_client = _KeylessFirecrawlClient(api_url=kwargs["api_url"]) if client_mode == "keyless" else Firecrawl(**kwargs)
-    wt._firecrawl_client_config = client_config
-    return wt._firecrawl_client
+    if cached is not None and cached[0] == client_config:
+        return cached[1]
+    client = _KeylessFirecrawlClient(api_url=kwargs["api_url"]) if client_mode == "keyless" else Firecrawl(**kwargs)
+    # Publish and read a single config/client snapshot; another profile may
+    # replace it immediately, so return this call's local client.
+    wt._firecrawl_client = (client_config, client)
+    return client
 
 
 # --- Response shape normalization (SDK / direct / gateway differ) --------------
@@ -329,6 +340,10 @@ class FirecrawlWebSearchProvider(BaseWebSearchProvider):
 
     def is_available(self) -> bool:
         return check_firecrawl_api_key()
+
+    def is_available_for_search_chain(self) -> bool:
+        from plugins.web.keyless_mcp import provider_tier
+        return provider_tier(self.NAME) != "free" and bool(_env("FIRECRAWL_API_KEY") or _env("FIRECRAWL_API_URL"))
 
     def search(self, query: str, limit: int = 5) -> dict[str, Any]:
         """Pre-flight errors (ValueError / ImportError) propagate so the dispatcher emits

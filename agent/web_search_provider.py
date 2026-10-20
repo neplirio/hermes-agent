@@ -74,6 +74,10 @@ class WebSearchProvider(ProviderBase):
         """True if this provider implements :meth:`search`."""
         return True
 
+    def is_available_for_search_chain(self) -> bool:
+        """Readiness without implicit anonymous fallback; override legacy rescue probes."""
+        return self.is_available()
+
     def is_keyless_available(self) -> bool:
         """True when this provider can serve calls WITHOUT credentials (public anonymous
         free tiers such as Exa / Parallel MCP); used only when NO provider is configured or

@@ -320,6 +320,10 @@ def web_search_tool(query: str, limit: int = 5) -> str:
             return tool_error("Interrupted", success=False)
         # Sync only — every provider's search() is sync.
         _ensure_web_plugins_loaded()
+        from agent.web_search_selection import search_selection_for_tool
+        selection = search_selection_for_tool()
+        if selection is not None:
+            return json.dumps(_selected_search(selection, query, limit), ensure_ascii=False)
         from agent.web_search_registry import get_active_search_provider, get_provider as _wsp_get_provider
         backend = _get_search_backend()
         provider = _wsp_get_provider(backend) if backend else None
@@ -345,6 +349,20 @@ def web_search_tool(query: str, limit: int = 5) -> str:
         return result_json
     except Exception as e:
         return _finish_debug("web_search_tool", debug_call_data, f"Error searching web: {e!s}")
+
+
+def _selected_search(selection, query: str, limit: int) -> dict:
+    from agent.web_search_selection import search_selection_scope
+
+    if selection.provider is None:
+        return {"success": False, "error": (
+            "Native search runs inside the model request, not as a client function."
+            if selection.native_tool else "No available backend in web.search_backends."
+        ), "diagnostics": list(selection.diagnostics)}
+    # Explicit chains have selection-time fallback only. Bypass the legacy memo:
+    # it can contain rescued results and is shared across profiles/configurations.
+    with search_selection_scope(selection):
+        return selection.provider.search(query, limit)
 
 
 def _memoized_search(provider, query: str, limit: int) -> dict:
@@ -484,6 +502,10 @@ def check_web_api_key() -> bool:
 
     See #28651, #31873.
     """
+    # Opt-in is profile-level; a model switch must never change the logical schema.
+    # Per-request support/credentials are checked by the chain, not this TTL gate.
+    if "search_backends" in _load_web_config():
+        return True
     # Boolean OR over configured + built-ins — probe order is irrelevant here.
     candidates = ([c for c in (_configured_backend(),) if c]
                   + [b for b in _LEGACY_WEB_BACKENDS if b not in _WEB_CHECK_SKIP])

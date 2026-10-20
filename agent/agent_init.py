@@ -2365,13 +2365,13 @@ def init_agent(
         checkpoints_enabled, checkpoint_max_snapshots, checkpoint_max_total_size_mb, checkpoint_max_file_size_mb,
     )
 
-    # Load config once for memory, skills, and compression sections
+    from agent.web_search_selection import parse_search_chain
     try:
         from hermes_cli.config import load_config_readonly as _load_agent_config
         _agent_cfg = _load_agent_config()
     except Exception:
         _agent_cfg = {}
-
+    agent._web_search_chain = parse_search_chain(_agent_cfg.get("web") or {})
     _apply_display_config(agent, _agent_cfg, platform)
     _init_memory(agent, _agent_cfg, skip_memory, platform, memory_manager=memory_manager)
     _apply_agent_section(agent, _agent_cfg)

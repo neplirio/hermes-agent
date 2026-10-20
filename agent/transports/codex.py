@@ -239,7 +239,24 @@ def _alias_wire_tools(
     def is_client_web_search(t: Any) -> bool:
         return isinstance(t, dict) and t.get("name") == "web_search"
 
-    if is_xai_responses and response_tools and any(is_client_web_search(t) for t in response_tools):
+    selection = params.get("search_selection")
+    if selection is not None:
+        # An explicit chain completely owns this request. Never re-resolve the
+        # legacy backend here; only replace a tool the session already granted.
+        if selection.native_tool:
+            response_tools = [
+                {"type": selection.native_tool} if is_client_web_search(t) else t
+                for t in (response_tools or [])
+            ]
+        elif is_xai_responses:
+            response_tools = [
+                {**t, "name": _XAI_CLIENT_WEB_SEARCH_ALIAS} if is_client_web_search(t) else t
+                for t in (response_tools or [])
+            ]
+            if any(t.get("name") == _XAI_CLIENT_WEB_SEARCH_ALIAS for t in response_tools):
+                wire_aliases[_XAI_CLIENT_WEB_SEARCH_ALIAS] = "web_search"
+
+    if selection is None and is_xai_responses and response_tools and any(is_client_web_search(t) for t in response_tools):
         if _xai_prefers_native_web_search():
             response_tools = [t for t in response_tools if not is_client_web_search(t)] + [{"type": "web_search"}]
         else:
@@ -251,7 +268,7 @@ def _alias_wire_tools(
     # and a client-side function of that name collides with it the same way. Unlike xAI there
     # is no alias fallback: when the user has not selected ``openai-native`` we leave the
     # client tool untouched, so an endpoint that cannot host the built-in never breaks.
-    if is_codex_backend and response_tools and any(is_client_web_search(t) for t in response_tools):
+    if selection is None and is_codex_backend and response_tools and any(is_client_web_search(t) for t in response_tools):
         if _openai_prefers_native_web_search():
             response_tools = [t for t in response_tools if not is_client_web_search(t)] + [{"type": "web_search"}]
     # OpenCode Responses backends reserve web_search / search_files as function names (HTTP 400 "custom
